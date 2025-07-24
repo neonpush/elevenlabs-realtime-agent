@@ -1,6 +1,6 @@
-# ElevenLabs Realtime Agent
+# ElevenLabs Realtime Agent v2
 
-A high-performance voice AI agent using ElevenLabs Conversational AI and Twilio for ultra-low latency phone conversations.
+A high-performance voice AI agent using ElevenLabs Conversational AI and Twilio for ultra-low latency phone conversations, now with intelligent lead data integration.
 
 ## Features
 
@@ -10,6 +10,17 @@ A high-performance voice AI agent using ElevenLabs Conversational AI and Twilio 
 - 📊 **Real-time metrics tracking**
 - 🌍 **Multi-language support** (29+ languages)
 - 🎨 **Voice cloning capabilities**
+- 🧠 **Smart Lead Integration** - Pre-populate lead data for context-aware conversations
+- 📈 **Adaptive Conversation Flow** - Adjusts based on data completeness
+- 🗄️ **PostgreSQL Integration** - Persistent lead storage and tracking
+
+## What's New in v2
+
+- **Lead Data Integration**: Receive pre-populated lead information via webhook
+- **Smart Conversation Strategies**: Agent adapts based on available data (COMPLETE/PARTIAL/MINIMAL)
+- **Efficient Data Collection**: Only asks for missing information
+- **Database Backend**: PostgreSQL for lead tracking and analytics
+- **Webhook API**: Secure endpoints for CRM/form integrations
 
 ## Quick Start
 
@@ -30,18 +41,29 @@ cp .env.example .env
 Required variables:
 - `ELEVENLABS_API_KEY` - Your ElevenLabs API key
 - `ELEVENLABS_AGENT_ID` - Your ElevenLabs agent ID
-- `TWILIO_ACCOUNT_SID` - Your Twilio account SID
-- `TWILIO_AUTH_TOKEN` - Your Twilio auth token
+- `DATABASE_URL` - PostgreSQL connection string
+- `WEBHOOK_SECRET` - Secret for webhook authentication
+- `TWILIO_ACCOUNT_SID` - Your Twilio account SID (optional)
+- `TWILIO_AUTH_TOKEN` - Your Twilio auth token (optional)
 - `TWILIO_PHONE_NUMBER` - Your Twilio phone number
-- `USER_PHONE_NUMBER` - Phone number to call for testing
 
-### 3. Start the Server
+### 3. Set Up Database
+
+```bash
+# Create database
+createdb elevenlabs_leads
+
+# Run migration
+psql elevenlabs_leads < src/database/migrations/001_create_leads_table.sql
+```
+
+### 4. Start the Server
 
 ```bash
 npm run dev
 ```
 
-### 4. Set Up Tunnel
+### 5. Set Up Tunnel
 
 In a new terminal:
 
@@ -55,18 +77,53 @@ Or use ngrok:
 ngrok http 3000
 ```
 
-### 5. Configure Twilio Webhook
+### 6. Configure Twilio Webhook
 
 1. Go to [Twilio Console](https://console.twilio.com/)
 2. Navigate to Phone Numbers → Manage → Active numbers
 3. Select your phone number
 4. Set the webhook URL to: `https://your-tunnel-url/voice`
 
-### 6. Test the Agent
+### 7. Test the Agent
 
 ```bash
 npm test
 ```
+
+## Lead Data Integration
+
+### Send Lead Data
+
+Before a call, send lead information to the webhook:
+
+```bash
+npm run test:webhook
+```
+
+Or manually:
+
+```bash
+curl -X POST http://localhost:3000/api/webhook/lead-data \
+  -H "Authorization: Bearer your_webhook_secret" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": {
+      "name": "John Smith",
+      "phoneNumber": "+447123456789",
+      "budget": 1200,
+      "yearlyWage": "30k-40k",
+      "occupation": "employed"
+    }
+  }'
+```
+
+### Lead Completeness Levels
+
+- **COMPLETE (7/7 fields)**: ~30-45 seconds call time
+- **PARTIAL (4-6/7 fields)**: ~60-90 seconds call time
+- **MINIMAL (1-3/7 fields)**: ~90-120 seconds call time
+
+See [Lead Integration Guide](docs/LEAD_INTEGRATION.md) for detailed documentation.
 
 ## Performance Metrics
 

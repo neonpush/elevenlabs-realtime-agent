@@ -6,6 +6,7 @@ const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 const userPhoneNumber = process.env.USER_PHONE_NUMBER;
+const webhookBaseUrl = process.env.WEBHOOK_BASE_URL || process.env.NGROK_URL || 'https://eight-donkeys-start.loca.lt';
 
 if (!accountSid || !authToken || !twilioPhoneNumber || !userPhoneNumber) {
   console.error('❌ Missing required environment variables');
@@ -17,13 +18,15 @@ const client = twilio(accountSid, authToken);
 
 async function makeTestCall() {
   try {
+    const webhookUrl = `${webhookBaseUrl}/voice`;
+    
     console.log('📞 Initiating test call with ElevenLabs...');
     console.log(`From: ${twilioPhoneNumber}`);
     console.log(`To: ${userPhoneNumber}`);
-    console.log('Webhook URL: https://full-moles-yell.loca.lt/voice');
+    console.log(`Webhook URL: ${webhookUrl}`);
     
     const call = await client.calls.create({
-      url: 'https://full-moles-yell.loca.lt/voice',
+      url: webhookUrl,
       to: userPhoneNumber,
       from: twilioPhoneNumber,
       timeout: 30

@@ -4,6 +4,7 @@ interface PooledConnection {
   ws: WebSocket;
   createdAt: number;
   callSid?: string;
+  phoneNumber?: string;
   isReady: boolean;
   lastUsed: number;
 }
@@ -13,21 +14,24 @@ export class ConnectionPool {
   private connections: Map<string, PooledConnection> = new Map();
   private hotConnections: PooledConnection[] = []; // Pre-warmed ready connections
   private readonly MAX_IDLE_TIME = 300000; // 5 minutes
-  private readonly HOT_POOL_SIZE = 3; // Keep 3 hot connections ready
+  private readonly HOT_POOL_SIZE = 0; // Disabled - create connections on demand
   private readonly MAX_CONNECTION_AGE = 1800000; // 30 minutes max age
   
   private constructor() {
     // Pre-warm hot connections immediately
-    this.preWarmHotPool();
+    // Disabled to prevent multiple ElevenLabs records
+    // this.preWarmHotPool();
     
     // Cleanup and maintain pools every 10 seconds
     setInterval(() => {
       this.cleanupIdleConnections();
-      this.maintainHotPool();
+      // Disabled to prevent multiple ElevenLabs records
+      // this.maintainHotPool();
     }, 10000);
     
     // Refresh hot pool every 15 minutes to prevent stale connections
-    setInterval(() => this.refreshHotPool(), 900000);
+    // Disabled to prevent multiple ElevenLabs records
+    // setInterval(() => this.refreshHotPool(), 900000);
   }
   
   static getInstance(): ConnectionPool {
@@ -37,12 +41,17 @@ export class ConnectionPool {
     return ConnectionPool.instance;
   }
 
-  async getOrCreateConnection(callSid: string): Promise<WebSocket | null> {
+  async getOrCreateConnection(callSid: string, phoneNumber?: string): Promise<WebSocket | null> {
+    console.log(`🔍 Looking for connection for call ${callSid}, phone: ${phoneNumber}`);
+    
     // Check if we already have a connection for this call
     const existing = this.connections.get(callSid);
     if (existing && existing.ws.readyState === WebSocket.OPEN) {
       console.log(`♻️  Reusing pre-warmed connection for ${callSid}`);
       existing.lastUsed = Date.now();
+      if (phoneNumber) {
+        existing.phoneNumber = phoneNumber;
+      }
       return existing.ws;
     }
     
