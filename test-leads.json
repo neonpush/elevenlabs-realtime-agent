@@ -1,0 +1,35 @@
+{
+  "leads": [
+    {
+      "name": "Michael",
+      "description": "All 7 required fields present",
+      "data": {
+        "leadId": "MANUAL_001",
+        "timestamp": "2024-01-19T10:30:00Z",
+        "source": "manual_test",
+        "data": {
+          "name": "Michael",
+          "moveInDate": "2025-09-15",
+          "budget": 1200,
+          "yearlyWage": "30k-40k",
+          "occupation": "employed",
+          "contractLength": 12,
+          "phoneNumber": "+447599434463",
+          "email": "john.smith@example.com",
+          "preferredTime": "afternoon",
+          "propertyType": "1-bed",
+          "area": "Central London",
+          "availability": [
+            "29 July 2025 - Morning (9:00 - 12:00)",
+            "31 July 2025 - Afternoon (12:00 - 14:00)"
+          ],
+          "addressLine1": "42 Wellington Square",
+          "postcode": "SW1A 2AA",
+          "bedroomCount": 1,
+          "availabilityAt": "2025-09-15",
+          "propertyCost": 1200
+        }
+      }
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 import WebSocket from 'ws';
 import { TwilioMediaMessage } from './types/twilio';
+import { LeadService } from './services/lead.service';
+import { Lead } from './database/models/Lead';
 
 interface ElevenLabsMessage {
   type: string;
@@ -21,8 +23,12 @@ export class ElevenLabsSession {
   private twilioWs: WebSocket;
   private callSid: string = '';
   private streamSid: string = '';
+  private phoneNumber: string = '';
+  private lead: Lead | null = null;
+  private conversationStrategy: any = null;
   private isConnected: boolean = false;
   private hasStartedConversation: boolean = false;
+  private lastConnectionWarning?: number;
   private metrics: ConversationMetrics = {
     callStartTime: 0,
     totalResponses: 0,
@@ -34,10 +40,10 @@ export class ElevenLabsSession {
   private outputFormat: string = 'pcm_8000'; // Track the actual output format
   private isUserSpeaking: boolean = false;
   private consecutiveSilentChunks: number = 0;
-  private silenceThreshold: number = 10; // Number of silent chunks before user is considered not speaking
+  private silenceThreshold: number = 15; // Number of silent chunks before user is considered not speaking
   private speechStartTime: number = 0;
   private consecutiveSpeechFrames: number = 0;
-  private minSpeechFrames: number = 3; // Require 3 consecutive frames of speech before triggering
+  private minSpeechFrames: number = 8; // Require 8 consecutive frames of speech before triggering
 
   constructor(twilioWs: WebSocket) {
     this.twilioWs = twilioWs;
@@ -55,28 +61,167 @@ export class ElevenLabsSession {
       }
 
       console.log('🔌 Connecting to ElevenLabs Conversational AI...');
+      console.log(`🔗 Agent ID: ${agentId}`);
+      console.log(`🔑 API Key: ${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}`);
+      
+      const wsUrl = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${agentId}&output_format=ulaw_8000`;
+      console.log(`🌐 WebSocket URL: ${wsUrl}`);
       
       // Connect to ElevenLabs WebSocket with μ-law 8kHz output (perfect for Twilio!)
+      // Note: ElevenLabs uses 'xi-api-key' header, not 'Authorization: Bearer'
       this.elevenLabsWs = new WebSocket(
-        `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${agentId}&output_format=ulaw_8000`,
+        wsUrl,
         {
           headers: {
-            'Authorization': `Bearer ${apiKey}`
+            'xi-api-key': apiKey
           }
         }
       );
+      
+      console.log('⏳ WebSocket instance created, waiting for connection...');
+      
+      // Add connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (!this.isConnected) {
+          console.error('❌ ElevenLabs connection timeout after 10 seconds');
+          console.error('❌ Please check:');
+          console.error('   1. Your ElevenLabs API key is valid');
+          console.error('   2. Your Agent ID is correct');
+          console.error('   3. Your network allows WebSocket connections');
+          this.elevenLabsWs?.close();
+          throw new Error('ElevenLabs connection timeout');
+        }
+      }, 10000);
 
       this.setupElevenLabsHandlers();
 
       this.elevenLabsWs.on('open', () => {
+        clearTimeout(connectionTimeout);
         const connectionTime = Date.now() - connectionStartTime;
         console.log(`✅ Connected to ElevenLabs ConvAI in ${connectionTime}ms`);
         this.isConnected = true;
         
-        // Send initialization data
-        this.elevenLabsWs!.send(JSON.stringify({
+        // Prepare initialization data with lead context
+        const initData: any = {
           type: 'conversation_initiation_client_data'
-        }));
+        };
+        
+        // Add lead context if available
+        if (this.lead) {
+          const conversationContext = this.buildLeadContext();
+          
+          // Log the full context for debugging
+          console.log('📋 Full lead context being sent:');
+          console.log(conversationContext);
+          
+          // Use dynamic_variables to pass lead data (as per ElevenLabs docs)
+          // NOTE: Your agent's prompt must reference these variables using {{variable_name}} syntax
+          // Example: "You are talking to {{lead_name}} who has a budget of {{lead_budget}}"
+          
+          // Get missing fields from conversation strategy
+          const missingFields = this.conversationStrategy?.missingFields || [];
+          const existingData = this.conversationStrategy?.existingData || {};
+          
+          // Format move-in date nicely
+          let formattedMoveInDate = '';
+          if (this.lead.move_in_date) {
+            const date = new Date(this.lead.move_in_date);
+            const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
+            formattedMoveInDate = date.toLocaleDateString('en-GB', options);
+          }
+          
+          // Ensure all variables are strings, not undefined
+          const sanitizeVariable = (value: any): string => {
+            if (value === null || value === undefined) return '';
+            return String(value);
+          };
+          
+          // Create custom variables that your agent is now expecting
+          const custom_greeting = this.lead.name 
+            ? `Hi ${this.lead.name}!` 
+            : 'Hello!';
+          
+          // Professional intro that asks permission to proceed
+          const custom_intro = `I'm Charlie calling from Lobby about the property you enquired about. Do you have a moment so I can confirm your details and help you book a viewing?`;
+          
+          initData.dynamic_variables = {
+            // Your agent is expecting these custom variables
+            custom_greeting: custom_greeting,
+            custom_intro: custom_intro,
+            // Core lead information - ALWAYS provide these even if empty
+            lead_id: sanitizeVariable(this.lead.id),
+            lead_name: sanitizeVariable(this.lead.name),
+            lead_phone: sanitizeVariable(this.lead.phone_number),
+            lead_move_in_date: sanitizeVariable(formattedMoveInDate),
+            lead_budget: this.lead.budget ? `£${Number(this.lead.budget).toFixed(0)}` : '',
+            lead_yearly_wage: this.lead.yearly_wage ? `£${this.lead.yearly_wage}` : '',
+            lead_occupation: sanitizeVariable(this.lead.occupation),
+            lead_contract_length: this.lead.contract_length ? `${this.lead.contract_length} months` : '',
+            
+            // Additional context
+            lead_completeness: sanitizeVariable(this.lead.completeness_level),
+            lead_email: sanitizeVariable(this.lead.email),
+            lead_property_type: sanitizeVariable(this.lead.property_type),
+            lead_area: sanitizeVariable(this.lead.area),
+            lead_preferred_time: sanitizeVariable(this.lead.preferred_time),
+            
+            // Missing fields info
+            missing_fields: missingFields.join(', ') || 'none',
+            has_missing_fields: missingFields.length > 0 ? 'yes' : 'no',
+            
+            // Property details - these help the agent talk about the specific apartment
+            property_address: sanitizeVariable(this.lead.address_line_1),
+            property_postcode: sanitizeVariable(this.lead.postcode),
+            property_bedrooms: this.lead.bedroom_count ? `${this.lead.bedroom_count} bedroom${this.lead.bedroom_count > 1 ? 's' : ''}` : '',
+            property_available_from: this.lead.availability_at ? new Date(this.lead.availability_at).toLocaleDateString('en-GB') : '',
+            property_monthly_cost: this.lead.property_cost ? `£${Number(this.lead.property_cost).toFixed(0)}` : '',
+            
+            // Full context for fallback
+            lead_context: conversationContext || '',
+            
+            // ElevenLabs conditional template support
+            // Based on the error and your template structure, try different approaches
+            
+            // Approach 1: Boolean values
+            if_lead_name: !!this.lead.name,
+            'if': true,  // Always true to enable conditionals
+            'else': true,  // Always true to enable else branches
+            
+            // Approach 2: The template might expect these to contain the actual content
+            // if_lead_name: this.lead.name ? `Hi ${this.lead.name}!` : 'Hello!',
+            
+            // Approach 3: Simple string flags
+            has_lead_name: this.lead.name ? 'true' : 'false',
+            
+            // Try to match exactly what the template engine might expect
+            'true': 'true',
+            'false': 'false'
+          };
+          
+          console.log('📋 Initializing conversation with lead context:', {
+            leadId: this.lead.id,
+            completeness: this.lead.completeness_level,
+            hasName: !!this.lead.name,
+            missingFields: missingFields
+          });
+          
+          console.log('📊 Dynamic variables being sent to ElevenLabs:');
+          Object.entries(initData.dynamic_variables).forEach(([key, value]) => {
+            console.log(`   ${key}: ${value}`);
+          });
+          
+          console.log('\n⚠️  Note: If you get "Missing required dynamic variables" errors,');
+          console.log('   your agent\'s first message might be using conditional logic like:');
+          console.log('   {{if lead_name}}Hello {{lead_name}}!{{else}}Hello!{{/if}}');
+          console.log('   Consider simplifying it to: "Hello! I\'m here to help you find your perfect property."');
+          console.log('   Or update it in the ElevenLabs dashboard to avoid conditionals.\n');
+        }
+        
+        // Log the full initialization data
+        console.log('📤 Full initialization data:', JSON.stringify(initData, null, 2));
+        
+        // Send initialization data
+        this.elevenLabsWs!.send(JSON.stringify(initData));
       });
 
     } catch (error) {
@@ -103,10 +248,25 @@ export class ElevenLabsSession {
       this.isConnected = false;
     });
 
-    this.elevenLabsWs.on('close', (code: number, reason: Buffer) => {
-      this.isConnected = false;
-      console.log(`🔌 Disconnected from ElevenLabs ConvAI - Code: ${code}, Reason: ${reason.toString()}`);
-    });
+          this.elevenLabsWs.on('close', (code: number, reason: Buffer) => {
+        this.isConnected = false;
+        const reasonStr = reason.toString();
+        console.log(`🔌 Disconnected from ElevenLabs ConvAI - Code: ${code}, Reason: ${reasonStr}`);
+        
+        // Special handling for missing dynamic variables error
+        if (code === 1008 && reasonStr.includes('Missing required dynamic variables')) {
+          console.error('\n❌ TEMPLATE ERROR: Your agent\'s first message uses conditional logic.');
+          console.error('   The ElevenLabs template engine couldn\'t find the required control variables.');
+          console.error('\n   SOLUTION: Edit your agent in the ElevenLabs dashboard:');
+          console.error('   1. Go to your agent settings');
+          console.error('   2. Find the "First Message" field');
+          console.error('   3. Remove any conditional logic (if/else statements)');
+          console.error('   4. Use a simple message like: "Hello! I\'m Charlie from Lobby..."');
+          console.error('\n   The current template appears to be using:');
+          console.error('   {{if lead_name}}...personalized greeting...{{else}}...generic greeting...{{/if}}');
+          console.error('   This syntax requires special variables that are hard to provide correctly.\n');
+        }
+      });
   }
 
   private handleElevenLabsMessage(message: ElevenLabsMessage): void {
@@ -358,9 +518,9 @@ export class ElevenLabsSession {
     }
     const rms = Math.sqrt(sum / samples.length);
     
-    // Multiple thresholds for better detection (adjusted for reduced gain)
-    const rmsThreshold = 800; // RMS threshold (balanced for reduced gain)
-    const peakThreshold = 2500; // Peak amplitude threshold (balanced for reduced gain)
+    // Multiple thresholds for better detection (increased to reduce false positives)
+    const rmsThreshold = 1200; // RMS threshold (increased for less sensitivity)
+    const peakThreshold = 3500; // Peak amplitude threshold (increased for less sensitivity)
     
     // Speech detected if either RMS or peak exceeds threshold
     return rms > rmsThreshold || maxAmplitude > peakThreshold;
@@ -439,26 +599,135 @@ export class ElevenLabsSession {
     this.twilioWs.send(JSON.stringify(clearMessage));
   }
 
+  private buildLeadContext(): string {
+    if (!this.lead || !this.conversationStrategy) return '';
+    
+    const { completenessLevel, missingFields, existingData } = this.conversationStrategy;
+    
+    let context = `LEAD CONTEXT:
+Lead ID: ${this.lead.id}
+Completeness: ${completenessLevel}
+Phone Number: ${this.lead.phone_number}
+
+`;
+    
+    // Add existing data
+    if (existingData.name) context += `Name: ${existingData.name}\n`;
+    if (existingData.moveInDate) context += `Move-in Date: ${existingData.moveInDate}\n`;
+    if (existingData.budget) context += `Budget: ${existingData.budget} monthly\n`;
+    if (existingData.yearlyWage) context += `Annual Income: ${existingData.yearlyWage}\n`;
+    if (existingData.occupation) context += `Occupation: ${existingData.occupation}\n`;
+    if (existingData.contractLength) context += `Contract Length: ${existingData.contractLength}\n`;
+    
+    // Add property details if available
+    if (this.lead.address_line_1 || this.lead.postcode || this.lead.bedroom_count || this.lead.property_cost) {
+      context += `\nPROPERTY DETAILS:\n`;
+      if (this.lead.address_line_1) context += `Address: ${this.lead.address_line_1}\n`;
+      if (this.lead.postcode) context += `Postcode: ${this.lead.postcode}\n`;
+      if (this.lead.bedroom_count) context += `Bedrooms: ${this.lead.bedroom_count}\n`;
+      if (this.lead.availability_at) {
+        const availDate = new Date(this.lead.availability_at);
+        context += `Available From: ${availDate.toLocaleDateString('en-GB')}\n`;
+      }
+      if (this.lead.property_cost) context += `Monthly Rent: £${this.lead.property_cost}\n`;
+    }
+    
+    // Add missing fields
+    if (missingFields.length > 0) {
+      context += `\nMISSING REQUIRED FIELDS: ${missingFields.join(', ')}\n`;
+    }
+    
+    // Add conversation instructions based on completeness
+    context += `\nCONVERSATION STRATEGY:
+    
+IMPORTANT: After your initial greeting and request to confirm details, WAIT for the person to give permission before proceeding. If they say yes, proceed with confirming details. If they're busy, offer to call back later.
+
+VIEWING HOURS: Viewings can ONLY be booked between 9:00 AM and 5:00 PM on weekdays (Monday-Friday). Do not offer or accept viewing times outside these hours.
+
+`;
+    if (completenessLevel === 'COMPLETE') {
+      context += `- This lead has all required information
+- Once they agree to proceed, quickly confirm their details: move-in date, budget, area
+- Then immediately offer viewing times
+- Be efficient and professional`;
+    } else if (completenessLevel === 'PARTIAL') {
+      context += `- This lead has some information
+- Once they agree to proceed, confirm existing data first
+- Then collect missing fields: ${missingFields.join(', ')}
+- Ask for missing data strategically before booking`;
+    } else {
+      context += `- This lead has minimal information
+- Once they agree to proceed, use standard qualification flow
+- Collect all required fields systematically
+- Essential: move-in date, budget, area, occupation`;
+    }
+    
+    return context;
+  }
+
+  private async loadLeadData(): Promise<void> {
+    if (!this.phoneNumber) return;
+    
+    try {
+      console.log(`🔍 Looking up lead data for ${this.phoneNumber}`);
+      this.lead = await LeadService.getLeadByPhoneNumber(this.phoneNumber, this.callSid);
+      
+      if (this.lead) {
+        this.conversationStrategy = LeadService.generateConversationStrategy(this.lead);
+        console.log('✅ Lead data loaded:', {
+          leadId: this.lead.id,
+          completeness: this.lead.completeness_level,
+          missingFields: this.conversationStrategy.missingFields
+        });
+      } else {
+        console.log('ℹ️ No lead data found for this phone number');
+      }
+    } catch (error) {
+      console.error('❌ Error loading lead data:', error);
+    }
+  }
+
   handleMessage(data: Buffer): void {
     try {
       const message: TwilioMediaMessage = JSON.parse(data.toString());
       
       switch (message.event) {
-        case 'connected':
-          console.log('🔗 Twilio media stream connected');
-          break;
-          
         case 'start':
+          console.log('📞 Twilio stream started');
           if (message.start) {
             this.callSid = message.start.callSid;
             this.streamSid = message.start.streamSid;
-            this.metrics.callStartTime = Date.now();
-            console.log(`📞 Call started - SID: ${this.callSid}`);
-            console.log(`🎵 Stream started - SID: ${this.streamSid}`);
+            this.phoneNumber = message.start.customParameters?.from || '';
             
-            // Initialize ElevenLabs connection when call starts
-            this.initializeElevenLabsConnection();
+            console.log('📞 Call details:', {
+              callSid: this.callSid,
+              streamSid: this.streamSid,
+              phoneNumber: this.phoneNumber,
+              customParameters: message.start.customParameters
+            });
+            
+            // Load lead data before connecting to ensure it's available immediately
+            if (this.phoneNumber) {
+              this.loadLeadData().then(() => {
+                // Small delay to ensure lead data is fully processed
+                setTimeout(() => {
+                  this.initializeElevenLabsConnection();
+                }, 100);
+              }).catch(error => {
+                console.error('❌ Error loading lead data:', error);
+                // Continue without lead data
+                this.initializeElevenLabsConnection();
+              });
+            } else {
+              this.initializeElevenLabsConnection();
+            }
+            
+            this.metrics.callStartTime = Date.now();
           }
+          break;
+          
+        case 'connected':
+          console.log('🔗 Twilio media stream connected');
           break;
           
         case 'media':
@@ -516,7 +785,11 @@ export class ElevenLabsSession {
               user_audio_chunk: pcmBase64
             }));
           } else if (!this.isConnected) {
-            console.log('⏳ Waiting for ElevenLabs connection...');
+            // Don't spam logs, just log once every second
+            if (!this.lastConnectionWarning || Date.now() - this.lastConnectionWarning > 1000) {
+              console.log('⏳ Waiting for ElevenLabs connection...');
+              this.lastConnectionWarning = Date.now();
+            }
           }
           break;
           

@@ -117,4 +117,4 @@ metrics/
 *.csv
 
 # Local tunnel files
-.lt-* 
+.lt-* .cursor/
