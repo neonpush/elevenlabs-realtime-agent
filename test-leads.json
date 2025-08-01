@@ -11,9 +11,9 @@
           "name": "Michael",
           "moveInDate": "2025-09-15",
           "budget": 1200,
-          "yearlyWage": "30k-40k",
+          "yearlyWage": 35000,
           "occupation": "employed",
-          "contractLength": 12,
+          "contractLength": "TWELVE_MONTHS",
           "phoneNumber": "+447599434463",
           "email": "john.smith@example.com",
           "preferredTime": "afternoon",
@@ -24,7 +24,7 @@
             "31 July 2025 - Afternoon (12:00 - 14:00)"
           ],
           "addressLine1": "42 Wellington Square",
-          "postcode": "SW1A 2AA",
+          "postcode": "SW1A",
           "bedroomCount": 1,
           "availabilityAt": "2025-09-15",
           "propertyCost": 1200

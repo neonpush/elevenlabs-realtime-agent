@@ -1,6 +1,7 @@
 import { Lead } from '../database/models/Lead';
 import { Op } from 'sequelize';
 import * as Joi from 'joi';
+import { ContractLength } from '../types/contract';
 
 // Lead data input interface
 export interface LeadDataInput {
@@ -11,9 +12,9 @@ export interface LeadDataInput {
     name?: string;
     moveInDate?: string;
     budget?: number;
-    yearlyWage?: string;
+    yearlyWage?: number;  // Changed from string to number
     occupation?: string;
-    contractLength?: number;
+    contractLength?: ContractLength;
     phoneNumber: string;
     email?: string;
     preferredTime?: string;
@@ -39,9 +40,9 @@ const leadDataSchema = Joi.object({
     name: Joi.string().optional(),
     moveInDate: Joi.string().isoDate().optional(),
     budget: Joi.number().positive().optional(),
-    yearlyWage: Joi.string().pattern(/^\d+k-\d+k$/).optional(),
+    yearlyWage: Joi.number().integer().positive().optional(),  // Changed to integer
     occupation: Joi.string().valid('employed', 'student').optional(),
-    contractLength: Joi.number().integer().positive().optional(),
+    contractLength: Joi.string().valid(...Object.values(ContractLength)).optional(),
     phoneNumber: Joi.string().required(),
     email: Joi.string().email().optional(),
     preferredTime: Joi.string().optional(),
@@ -50,7 +51,7 @@ const leadDataSchema = Joi.object({
     availability: Joi.array().items(Joi.string()).optional(),
     // Property validation rules
     addressLine1: Joi.string().max(255).optional(),           // Max 255 characters
-    postcode: Joi.string().pattern(/^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$/i).optional(), // UK postcode format
+    postcode: Joi.string().pattern(/^[A-Z]{1,2}[0-9]{1,2}[A-Z]?$/i).min(3).max(5).optional(), // First 4-5 chars of UK postcode (e.g., SW1, SW11, NW10A)
     bedroomCount: Joi.number().integer().min(0).max(10).optional(), // 0-10 bedrooms
     availabilityAt: Joi.string().isoDate().optional(),        // Must be valid date
     propertyCost: Joi.number().positive().optional()          // Must be positive number
@@ -215,7 +216,7 @@ export class LeadService {
         budget: lead.budget ? `£${lead.budget}` : null,
         yearlyWage: lead.yearly_wage ? `£${lead.yearly_wage}` : null,
         occupation: lead.occupation,
-        contractLength: lead.contract_length ? `${lead.contract_length} months` : null
+        contractLength: lead.contract_length || null
       }
     };
   }

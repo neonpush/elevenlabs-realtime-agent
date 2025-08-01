@@ -111,7 +111,7 @@ curl -X POST http://localhost:3000/api/webhook/lead-data \
       "name": "John Smith",
       "phoneNumber": "+447123456789",
       "budget": 1200,
-      "yearlyWage": "30k-40k",
+      "yearlyWage": 35000,
       "occupation": "employed"
     }
   }'

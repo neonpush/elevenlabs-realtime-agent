@@ -2,6 +2,7 @@ import WebSocket from 'ws';
 import { TwilioMediaMessage } from './types/twilio';
 import { LeadService } from './services/lead.service';
 import { Lead } from './database/models/Lead';
+import { ContractLength } from './types/contract';
 
 interface ElevenLabsMessage {
   type: string;
@@ -156,7 +157,7 @@ export class ElevenLabsSession {
             lead_budget: this.lead.budget ? `£${Number(this.lead.budget).toFixed(0)}` : '',
             lead_yearly_wage: this.lead.yearly_wage ? `£${this.lead.yearly_wage}` : '',
             lead_occupation: sanitizeVariable(this.lead.occupation),
-            lead_contract_length: this.lead.contract_length ? `${this.lead.contract_length} months` : '',
+            lead_contract_length: this.lead.contract_length ? this.getContractLengthDisplay(this.lead.contract_length) : '',
             
             // Additional context
             lead_completeness: sanitizeVariable(this.lead.completeness_level),
@@ -597,6 +598,21 @@ export class ElevenLabsSession {
     
     console.log('🛑 Sending clear command to Twilio');
     this.twilioWs.send(JSON.stringify(clearMessage));
+  }
+
+  private getContractLengthDisplay(contractLength: ContractLength): string {
+    switch (contractLength) {
+      case ContractLength.LT_SIX_MONTHS:
+        return 'Less than 6 months';
+      case ContractLength.SIX_MONTHS:
+        return '6 months';
+      case ContractLength.TWELVE_MONTHS:
+        return '12 months';
+      case ContractLength.GT_TWELVE_MONTHS:
+        return 'More than 12 months';
+      default:
+        return contractLength;
+    }
   }
 
   private buildLeadContext(): string {

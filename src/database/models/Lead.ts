@@ -1,5 +1,6 @@
 import { Model, DataTypes, Optional } from 'sequelize';
 import { sequelize } from '../config';
+import { ContractLength } from '../../types/contract';
 
 // Lead attributes interface
 interface LeadAttributes {
@@ -9,9 +10,9 @@ interface LeadAttributes {
   name?: string;
   move_in_date?: Date;
   budget?: number;
-  yearly_wage?: string;
+  yearly_wage?: number;  // Changed from string to number
   occupation?: string;
-  contract_length?: number;
+  contract_length?: ContractLength;
   email?: string;
   preferred_time?: string;
   property_type?: string;
@@ -45,9 +46,9 @@ export class Lead extends Model<LeadAttributes, LeadCreationAttributes> implemen
   public name?: string;
   public move_in_date?: Date;
   public budget?: number;
-  public yearly_wage?: string;
+  public yearly_wage?: number;  // Changed from string to number
   public occupation?: string;
-  public contract_length?: number;
+  public contract_length?: ContractLength;
   public email?: string;
   public preferred_time?: string;
   public property_type?: string;
@@ -98,9 +99,9 @@ Lead.init(
       allowNull: true
     },
     yearly_wage: {
-      type: DataTypes.STRING(20),
+      type: DataTypes.INTEGER,
       allowNull: true,
-      comment: 'Range format: "20k-30k", "30k-40k", etc.'
+      comment: 'Annual wage in pounds (e.g., 30000 for £30k)'
     },
     occupation: {
       type: DataTypes.STRING(20),
@@ -110,9 +111,12 @@ Lead.init(
       }
     },
     contract_length: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.STRING(20),
       allowNull: true,
-      comment: 'Contract length in months'
+      validate: {
+        isIn: [Object.values(ContractLength)]
+      },
+      comment: 'Contract length enum: LT_SIX_MONTHS, SIX_MONTHS, TWELVE_MONTHS, GT_TWELVE_MONTHS'
     },
     email: {
       type: DataTypes.STRING(255),

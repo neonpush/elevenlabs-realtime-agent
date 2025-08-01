@@ -68,9 +68,9 @@ npm install
     "name": "John Smith",
     "moveInDate": "2024-03-15",
     "budget": 1200,
-    "yearlyWage": "30k-40k",
+    "yearlyWage": 35000,
     "occupation": "employed",
-    "contractLength": 12,
+    "contractLength": "TWELVE_MONTHS",
     "phoneNumber": "+447123456789",
     "email": "john@example.com",
     "preferredTime": "afternoon",
@@ -163,9 +163,9 @@ curl -X POST http://localhost:3000/api/webhook/lead-data \
 1. **name** - Full name
 2. **moveInDate** - When they want to move in
 3. **budget** - Monthly budget in GBP
-4. **yearlyWage** - Annual income range (e.g., "30k-40k")
+4. **yearlyWage** - Annual income as integer (e.g., 35000 for £35k)
 5. **occupation** - "employed" or "student"
-6. **contractLength** - Contract duration in months
+6. **contractLength** - Contract enum: "LT_SIX_MONTHS", "SIX_MONTHS", "TWELVE_MONTHS", "GT_TWELVE_MONTHS"
 7. **phoneNumber** - Contact number
 
 ## Integration Examples
