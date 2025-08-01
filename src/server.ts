@@ -107,7 +107,7 @@ async function startServer() {
     // Initialize database connection
     console.log('🔌 Connecting to PostgreSQL database...');
     await testConnection();
-    await sequelize.sync({ alter: true }); // This will create/update tables
+    await sequelize.sync({ force: true }); // This will drop and recreate tables
     console.log('✅ Database synchronized');
     
     server.listen(PORT, () => {
